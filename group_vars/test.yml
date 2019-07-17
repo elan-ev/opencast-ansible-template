@@ -1,0 +1,9 @@
+# passwords
+database_admin_pass: 
+database_pass: 
+opencast_admin_password: 
+opencast_digest_password: 
+
+# pkg.opencast.org credentials
+opencast_rpm_repo_username: 
+opencast_rpm_repo_password: 

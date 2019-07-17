@@ -1,0 +1,224 @@
+---
+
+###
+# Install Opencast RPM repositories
+
+- name: install opencast repository
+  yum_repository:
+    file: opencast
+    name: "{{item.name}}"
+    description: "{{item.description}}"
+    baseurl: "{{item.baseurl}}"
+    username: "{{opencast_rpm_repo_username}}"
+    password: "{{opencast_rpm_repo_password}}"
+    enabled: "{{item.enabled}}"
+    gpgcheck: yes
+    gpgkey: https://pkg.opencast.org/gpgkeys/opencast-el7-rpm.opencast.org.key
+  with_items:
+    - { name: "opencast",
+        description: "Opencast el 7 Repository",
+        baseurl: "https://pkg.opencast.org/rpms/release/el/7/x86_64",
+        enabled: "yes" }
+    - { name: "opencast-noarch",
+        description: "Opencast el 7 Repository - noarch",
+        baseurl: "https://pkg.opencast.org/rpms/release/el/7/noarch",
+        enabled: "yes" }
+    - { name: "opencast-debuginfo",
+        description: "Opencast el 7 Repository - debuginfo",
+        baseurl: "https://pkg.opencast.org/rpms/release/el/7/debuginfo",
+        enabled: "no" }
+
+- name: install opencast testing repository (rh)
+  yum_repository:
+    file: opencast-testing
+    name: "{{item.name}}"
+    description: "{{item.description}}"
+    baseurl: "{{item.baseurl}}"
+    username: "{{opencast_rpm_repo_username}}"
+    password: "{{opencast_rpm_repo_password}}"
+    enabled: "{{item.enabled}}"
+    gpgcheck: yes
+    gpgkey: https://pkg.opencast.org/gpgkeys/opencast-el7-rpm.opencast.org.key
+  with_items:
+    - { name: "opencast-testing",
+        description: "Opencast el 7 Testing Repository",
+        baseurl: "https://pkg.opencast.org/rpms/testing/el/7/x86_64",
+        enabled: "no" }
+    - { name: "opencast-testing-noarch",
+        description: "Opencast el 7 Testing Repository - noarch",
+        baseurl: "https://pkg.opencast.org/rpms/testing/el/7/noarch",
+        enabled: "no" }
+    - { name: "opencast-testing-debuginfo",
+        description: "Opencast el 7 Testing Repository - debuginfo",
+        baseurl: "https://pkg.opencast.org/rpms/testing/el/7/debuginfo",
+        enabled: "no" }
+
+
+###
+# Install Opencast and dependencies
+
+- name: install opencast and dependencies
+  package:
+    name: "{{item}}"
+    state: present
+  with_items:
+    - opencast6-allinone
+    - mariadb
+    - mariadb-server
+    - MySQL-python
+    - activemq-dist
+  notify:
+    - restart activemq
+    - restart opencast
+
+###
+# Copy Configuration
+
+- name: copy additional ncast encoding profile
+  copy: 
+    src=files/ncast-movies.properties
+    dest=/etc/opencast/encoding/
+    owner=root
+    group=root
+    mode=0644
+    force=yes
+
+- name: copy additional ncast workflow
+  copy:
+    src=files/partial-work-ncast.xml
+    dest=/etc/opencast/workflows/     
+    owner=root
+    group=root
+    mode=0644
+    force=yes
+
+- name: copy default workflow for ncast enhancement
+  copy:
+    src=/etc/opencast/workflows/schedule-and-upload.xml
+    dest=/etc/opencast/workflows/schedule-and-upload-ncast.xml
+    owner=root
+    group=root
+    mode=0644
+    force=yes
+    remote_src=yes
+ 
+###
+# Configure Opencast
+
+- name: configure opencast
+  lineinfile:
+    path: /etc/opencast/custom.properties
+    regexp: '{{item.regexp}}'
+    line: '{{item.line}}'
+  with_items:
+    - { regexp: "^org.opencastproject.server.url=",
+      line:   "org.opencastproject.server.url=https://{{inventory_hostname}}" }
+    - { regexp: "^org.opencastproject.security.admin.pass=",
+        line:   "org.opencastproject.security.admin.pass={{opencast_admin_password}}" }
+    - { regexp: "^org.opencastproject.security.digest.pass=",
+        line:   "org.opencastproject.security.digest.pass={{opencast_digest_password}}" }
+    - { regexp: "org.opencastproject.db.ddl.generation=",
+        line:   "org.opencastproject.db.ddl.generation=false" }
+    - { regexp: "org.opencastproject.db.vendor=",
+        line:   "org.opencastproject.db.vendor=MySQL" }
+    - { regexp: "org.opencastproject.db.jdbc.driver=",
+        line:   "org.opencastproject.db.jdbc.driver=com.mysql.jdbc.Driver" }
+    - { regexp: "org.opencastproject.db.jdbc.url=",
+        line:   "org.opencastproject.db.jdbc.url=jdbc:mysql://localhost/{{database_name}}" }
+    - { regexp: "org.opencastproject.db.jdbc.user=",
+        line:   "org.opencastproject.db.jdbc.user={{database_user}}" }
+    - { regexp: "org.opencastproject.db.jdbc.pass=",
+        line:   "org.opencastproject.db.jdbc.pass={{database_pass}}" }
+  notify:
+    - restart opencast
+
+- name: configure new NCast Workflow
+  lineinfile:
+    path: /etc/opencast/workflows/schedule-and-upload-ncast.xml
+    regexp: '{{item.regexp}}'
+    line: '{{item.line}}'
+  with_items:
+    - { regexp: "^  <id>schedule-and-upload</id>",
+        line:   "  <id>schedule-and-upload-ncast</id>" }
+    - { regexp: "^  <title>Process upon upload and schedule</title>",
+        line:   "  <title>NCast Recording</title>" }
+    - { regexp: "^        <configuration key=\"workflow-id\">partial-work</configuration>",
+        line:   "        <configuration key=\"workflow-id\">partial-work-ncast</configuration>" }
+
+
+###
+# Set-up ActiveMQ
+
+- name: configure activemq
+  copy:
+    src: /usr/share/opencast/docs/scripts/activemq/activemq.xml
+    dest: /etc/activemq/activemq.xml
+    remote_src: yes
+  notify:
+    - restart activemq
+
+- name: enable activemq
+  service:
+    name: activemq
+    enabled: yes
+    state: started
+
+###
+# Set-up MariaDB
+
+- name: enable mariadb
+  service:
+    name: mariadb
+    enabled: yes
+    state: started
+
+- name: set root user password
+  mysql_user:
+    name: root
+    password: "{{database_admin_pass}}"
+    login_user: root
+    login_password: "{{database_admin_pass}}"
+    check_implicit_admin: yes
+    state: present
+
+- name: create database
+  mysql_db:
+    name: "{{database_name}}"
+    state: present
+    encoding: utf8
+    collation: utf8_general_ci
+    login_user: root
+    login_password: "{{database_admin_pass}}"
+  notify: set-up database schema
+
+- name: create database user
+  mysql_user:
+    name: "{{database_user}}"
+    password: "{{database_pass}}"
+    login_user: "{{database_admin_user}}"
+    login_password: "{{database_admin_pass}}"
+    priv: '{{database_name}}.*:SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,TRIGGER,CREATE TEMPORARY TABLES,REFERENCES'
+    state: present
+
+- name: enable opencast
+  service:
+    name: opencast
+    enabled: yes
+    state: started
+
+###
+# Set-up firewall
+
+- name: configure firewall
+  firewalld:
+    service: https
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: configure firewall
+  firewalld:
+    service: http
+    permanent: true
+    immediate: true
+    state: enabled

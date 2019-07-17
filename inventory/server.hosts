@@ -1,0 +1,6 @@
+[all:children]
+test
+
+[test]
+ec2-34-245-151-73.eu-west-1.compute.amazonaws.com
+

@@ -1,0 +1,19 @@
+---
+
+- name: set-up database schema
+  mysql_db:
+    name: "{{database_name}}"
+    state: import
+    login_user: "{{database_admin_user}}"
+    login_password: "{{database_admin_pass}}"
+    target: /usr/share/opencast/docs/scripts/ddl/mysql5.sql
+
+- name: restart activemq
+  service:
+    name: activemq
+    state: restarted
+
+- name: restart opencast
+  service:
+    name: opencast
+    state: restarted

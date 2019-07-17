@@ -1,0 +1,3 @@
+database_admin_user: root
+database_name: opencast
+database_user: opencast
